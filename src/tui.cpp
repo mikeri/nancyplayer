@@ -7,7 +7,7 @@
 #include <algorithm>
 #include <iostream>
 
-TUI::TUI() : running(false), search_mode(false), search_selected(0), next_color_pair(1) {
+TUI::TUI() : running(false), search_mode(false), search_selected(0), next_color_pair(1), browser_start_line(0), search_start_line(0) {
     initscr();
     cbreak();
     noecho();
@@ -64,12 +64,30 @@ void TUI::initWindows() {
 }
 
 void TUI::destroyWindows() {
-    if (header_win) delwin(header_win);
-    if (browser_win) delwin(browser_win);
-    if (separator_win) delwin(separator_win);
-    if (stil_win) delwin(stil_win);
-    if (status_win) delwin(status_win);
-    if (help_win) delwin(help_win);
+    if (header_win) {
+        delwin(header_win);
+        header_win = nullptr;
+    }
+    if (browser_win) {
+        delwin(browser_win);
+        browser_win = nullptr;
+    }
+    if (separator_win) {
+        delwin(separator_win);
+        separator_win = nullptr;
+    }
+    if (stil_win) {
+        delwin(stil_win);
+        stil_win = nullptr;
+    }
+    if (status_win) {
+        delwin(status_win);
+        status_win = nullptr;
+    }
+    if (help_win) {
+        delwin(help_win);
+        help_win = nullptr;
+    }
 }
 
 void TUI::run() {
@@ -89,11 +107,17 @@ void TUI::run() {
     
     while (running) {
         handleInput();
+        handleResize();
         refresh();
     }
 }
 
 void TUI::refresh() {
+    // Safety check - don't draw if windows aren't initialized
+    if (!header_win || !browser_win || !separator_win || !stil_win || !status_win || !help_win) {
+        return;
+    }
+    
     drawHeader();
     if (search_mode) {
         drawSearchResults();
@@ -179,23 +203,24 @@ void TUI::drawBrowser() {
     int selected = browser->getSelectedIndex();
     
     // Calculate scroll position with 2-line buffer from top/bottom
-    static int start_line = 0;
     int buffer = 2;
     
     // Only scroll when selected item gets within buffer distance of edges
-    if (selected < start_line + buffer) {
+    if (selected < browser_start_line + buffer) {
         // Too close to top, scroll up
-        start_line = std::max(0, selected - buffer);
-    } else if (selected >= start_line + height - buffer) {
+        browser_start_line = std::max(0, selected - buffer);
+    } else if (selected >= browser_start_line + height - buffer) {
         // Too close to bottom, scroll down
-        start_line = std::min((int)entries.size() - height, selected - height + buffer + 1);
+        browser_start_line = std::min((int)entries.size() - height, selected - height + buffer + 1);
     }
     
-    // Ensure start_line is within valid bounds
-    start_line = std::max(0, std::min(start_line, (int)entries.size() - height));
+    // Ensure browser_start_line is within valid bounds
+    browser_start_line = std::max(0, std::min(browser_start_line, (int)entries.size() - height));
     if ((int)entries.size() <= height) {
-        start_line = 0;
+        browser_start_line = 0;
     }
+    
+    int start_line = browser_start_line;
     
     for (int i = 0; i < std::min((int)entries.size(), height); i++) {
         int entry_idx = start_line + i;
@@ -507,7 +532,6 @@ void TUI::drawSearchResults() {
     }
     
     // Calculate scroll position with 2-line buffer from top/bottom for search results
-    static int search_start_line = 0;
     int buffer = 2;
     int available_height = height - 1; // Account for header line
     
@@ -711,4 +735,47 @@ void TUI::handleInput() {
                 break;
         }
     }
+}
+
+void TUI::handleResize() {
+    // Check if we received a SIGWINCH signal (terminal resize)
+    if (is_term_resized(screen_height, screen_width)) {
+        // Get new dimensions
+        int new_height, new_width;
+        getmaxyx(stdscr, new_height, new_width);
+        
+        // Update stored dimensions
+        screen_height = new_height;
+        screen_width = new_width;
+        
+        // Check minimum size
+        if (screen_height < 20 || screen_width < 60) {
+            return; // Don't resize if too small
+        }
+        
+        // Notify ncurses that we've handled the resize
+        resize_term(new_height, new_width);
+        
+        // Destroy old windows safely
+        destroyWindows();
+        
+        // Clear the screen completely
+        erase();
+        refresh();
+        
+        // Reinitialize windows with new dimensions
+        initWindows();
+        
+        // Reset scroll positions for new window sizes
+        resetScrollPositions();
+        
+        // Force a complete redraw
+        clearok(stdscr, TRUE);
+        refresh();
+    }
+}
+
+void TUI::resetScrollPositions() {
+    browser_start_line = 0;
+    search_start_line = 0;
 }

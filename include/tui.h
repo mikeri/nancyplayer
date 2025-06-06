@@ -20,6 +20,7 @@ public:
     void run();
     void refresh();
     void handleInput();
+    void handleResize();
     
 private:
     void initWindows();
@@ -33,6 +34,7 @@ private:
     void drawHelp();
     void drawSearchResults();
     void drawSeparator();
+    void resetScrollPositions();
     
     WINDOW* header_win;
     WINDOW* browser_win;
@@ -56,4 +58,6 @@ private:
     int screen_width;
     std::map<std::pair<int, int>, int> color_pair_cache;
     int next_color_pair;
+    int browser_start_line;
+    int search_start_line;
 };
