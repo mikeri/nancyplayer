@@ -99,6 +99,17 @@ void TUI::run() {
     
     running = true;
     config->loadConfig();
+    
+    // Validate HVSC root directory before starting
+    if (!config->validateHvscRoot()) {
+        endwin();
+        std::cerr << "HVSC directory not found or invalid: " << config->getHvscRoot() << std::endl;
+        std::cerr << "Please edit the configuration file: " << config->getConfigDir() << "/config" << std::endl;
+        std::cerr << "Set hvsc_root to point to your HVSC collection directory." << std::endl;
+        std::cerr << "Example: hvsc_root=/path/to/your/C64Music" << std::endl;
+        return;
+    }
+    
     browser->setDirectory(config->getHvscRoot());
     stil_reader->loadDatabase(config->getHvscRoot());
     search->loadDatabase(config->getHvscRoot());

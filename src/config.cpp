@@ -5,8 +5,16 @@
 #include <algorithm>
 #include <cstdlib>
 
-Config::Config() : current_theme_name("default"), hvsc_root(".") {
+Config::Config() : current_theme_name("default") {
     initializeDirectories();
+    
+    // Set default HVSC root to ~/Music/C64Music
+    const char* home = std::getenv("HOME");
+    if (home && *home) {
+        hvsc_root = std::string(home) + "/Music/C64Music";
+    } else {
+        hvsc_root = "./Music/C64Music";  // Fallback
+    }
 }
 
 void Config::initializeDirectories() {
@@ -43,11 +51,11 @@ bool Config::loadConfig() {
     // Try to load main config file
     std::ifstream file(config_file);
     if (!file.is_open()) {
-        // Create default config
+        // Create default config with proper HVSC root
         std::ofstream out_file(config_file);
         if (out_file.is_open()) {
             out_file << "theme=default\n";
-            out_file << "hvsc_root=.\n";
+            out_file << "hvsc_root=" << hvsc_root << "\n";
             out_file.close();
         }
         return loadTheme("default");
@@ -337,4 +345,33 @@ std::string Config::getRelativeToHvsc(const std::string& path) const {
         // If we can't get relative path, just return the original
         return path;
     }
+}
+
+bool Config::validateHvscRoot() const {
+    if (!std::filesystem::exists(hvsc_root)) {
+        return false;
+    }
+    
+    if (!std::filesystem::is_directory(hvsc_root)) {
+        return false;
+    }
+    
+    // Check for common HVSC subdirectories to verify it's actually HVSC
+    std::vector<std::string> hvsc_indicators = {
+        "DEMOS",
+        "GAMES", 
+        "MUSICIANS",
+        "DOCUMENTS"
+    };
+    
+    int found_indicators = 0;
+    for (const auto& indicator : hvsc_indicators) {
+        std::string indicator_path = hvsc_root + "/" + indicator;
+        if (std::filesystem::exists(indicator_path) && std::filesystem::is_directory(indicator_path)) {
+            found_indicators++;
+        }
+    }
+    
+    // Require at least 2 of the common HVSC directories to be present
+    return found_indicators >= 2;
 }

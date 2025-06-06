@@ -63,6 +63,7 @@ public:
     std::string getThemesDir() const { return themes_dir; }
     std::string getHvscRoot() const { return hvsc_root; }
     std::string getRelativeToHvsc(const std::string& path) const;
+    bool validateHvscRoot() const;
     
 private:
     void initializeDirectories();
