@@ -17,6 +17,7 @@ add_executable(nancyplayer
     src/file_browser.cpp
     src/stil_reader.cpp
     src/search.cpp
+    src/config.cpp
 )
 
 target_include_directories(nancyplayer PRIVATE

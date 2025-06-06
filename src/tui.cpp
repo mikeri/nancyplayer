@@ -3,10 +3,11 @@
 #include "file_browser.h"
 #include "stil_reader.h"
 #include "search.h"
+#include "config.h"
 #include <algorithm>
 #include <iostream>
 
-TUI::TUI() : running(false), search_mode(false), search_selected(0) {
+TUI::TUI() : running(false), search_mode(false), search_selected(0), next_color_pair(1) {
     initscr();
     cbreak();
     noecho();
@@ -14,12 +15,7 @@ TUI::TUI() : running(false), search_mode(false), search_selected(0) {
     keypad(stdscr, TRUE);
     timeout(100);
     
-    start_color();
-    init_pair(1, COLOR_WHITE, COLOR_BLUE);
-    init_pair(2, COLOR_BLACK, COLOR_WHITE);
-    init_pair(3, COLOR_YELLOW, COLOR_BLACK);
-    init_pair(4, COLOR_GREEN, COLOR_BLACK);
-    init_pair(5, COLOR_RED, COLOR_BLACK);
+    initColors();
     
     getmaxyx(stdscr, screen_height, screen_width);
     
@@ -27,6 +23,7 @@ TUI::TUI() : running(false), search_mode(false), search_selected(0) {
     browser = std::make_unique<FileBrowser>();
     stil_reader = std::make_unique<StilReader>();
     search = std::make_unique<Search>();
+    config = std::make_unique<Config>();
     
     initWindows();
 }
@@ -42,20 +39,25 @@ void TUI::initWindows() {
     int help_height = 1;
     int main_height = screen_height - header_height - status_height - help_height;
     int browser_width = screen_width / 2;
+    int separator_width = 1;
+    int stil_width = screen_width - browser_width - separator_width;
     
     if (main_height < 1) main_height = 1;
     
     header_win = newwin(header_height, screen_width, 0, 0);
     browser_win = newwin(main_height, browser_width, header_height, 0);
-    stil_win = newwin(main_height, screen_width - browser_width, header_height, browser_width);
+    separator_win = newwin(main_height, separator_width, header_height, browser_width);
+    stil_win = newwin(main_height, stil_width, header_height, browser_width + separator_width);
     status_win = newwin(status_height, screen_width, screen_height - help_height - status_height, 0);
     help_win = newwin(help_height, screen_width, screen_height - help_height, 0);
     
-    wbkgd(header_win, COLOR_PAIR(1));
-    wbkgd(status_win, COLOR_PAIR(2));
+    const auto& theme = config->getCurrentTheme();
+    wbkgd(header_win, COLOR_PAIR(getColorPair(theme.top_bar.fg, theme.top_bar.bg)));
+    wbkgd(status_win, COLOR_PAIR(getColorPair(theme.status_bar.fg, theme.status_bar.bg)));
     
     keypad(header_win, TRUE);
     keypad(browser_win, TRUE);
+    keypad(separator_win, TRUE);
     keypad(stil_win, TRUE);
     keypad(status_win, TRUE);
     keypad(help_win, TRUE);
@@ -64,6 +66,7 @@ void TUI::initWindows() {
 void TUI::destroyWindows() {
     if (header_win) delwin(header_win);
     if (browser_win) delwin(browser_win);
+    if (separator_win) delwin(separator_win);
     if (stil_win) delwin(stil_win);
     if (status_win) delwin(status_win);
     if (help_win) delwin(help_win);
@@ -77,9 +80,10 @@ void TUI::run() {
     }
     
     running = true;
-    browser->setDirectory(".");
-    stil_reader->loadDatabase(".");
-    search->loadDatabase(".");
+    config->loadConfig();
+    browser->setDirectory(config->getHvscRoot());
+    stil_reader->loadDatabase(config->getHvscRoot());
+    search->loadDatabase(config->getHvscRoot());
     
     refresh();
     
@@ -96,6 +100,7 @@ void TUI::refresh() {
     } else {
         drawBrowser();
     }
+    drawSeparator();
     drawStilInfo();
     drawStatus();
     drawHelp();
@@ -106,46 +111,120 @@ void TUI::refresh() {
 void TUI::drawHeader() {
     werase(header_win);
     
-    mvwprintw(header_win, 0, 0, "Nancy SID Player");
+    std::string relative_path = config->getRelativeToHvsc(browser->getCurrentPath());
+    mvwprintw(header_win, 0, 0, "Nancy SID Player - %s", relative_path.c_str());
     
     wnoutrefresh(header_win);
+}
+
+void TUI::initColors() {
+    start_color();
+    
+    // Check if terminal supports 256 colors
+    if (COLORS >= 256) {
+        // Use 256 color mode
+        for (int i = 0; i < 256; i++) {
+            if (can_change_color()) {
+                // Terminal supports color changing (rare)
+                continue;
+            }
+        }
+    }
+    
+    // Initialize default color pairs
+    init_pair(1, 15, COLOR_BLACK);  // Bright white on black
+    init_pair(2, COLOR_BLACK, 15);  // Black on bright white
+    init_pair(3, COLOR_YELLOW, COLOR_BLACK);
+    init_pair(4, COLOR_GREEN, COLOR_BLACK);
+    init_pair(5, COLOR_RED, COLOR_BLACK);
+}
+
+int TUI::getColorPair(int fg, int bg) {
+    std::pair<int, int> key = std::make_pair(fg, bg);
+    
+    auto it = color_pair_cache.find(key);
+    if (it != color_pair_cache.end()) {
+        return it->second;
+    }
+    
+    // Create new color pair
+    int pair_num = next_color_pair++;
+    if (pair_num >= COLOR_PAIRS) {
+        // Fallback to white on black if we run out of pairs
+        return 1;
+    }
+    
+    init_pair(pair_num, fg, bg);
+    color_pair_cache[key] = pair_num;
+    return pair_num;
 }
 
 
 void TUI::drawBrowser() {
     werase(browser_win);
     
+    const auto& theme = config->getCurrentTheme();
     int height, width;
     getmaxyx(browser_win, height, width);
     
-    mvwprintw(browser_win, 0, 0, "Path: %s", browser->getCurrentPath().c_str());
-    
     const auto& entries = browser->getEntries();
     int selected = browser->getSelectedIndex();
-    int start_line = std::max(0, selected - (height - 3));
     
-    for (int i = 0; i < std::min((int)entries.size(), height - 2); i++) {
+    // Calculate scroll position with 2-line buffer from top/bottom
+    static int start_line = 0;
+    int buffer = 2;
+    
+    // Only scroll when selected item gets within buffer distance of edges
+    if (selected < start_line + buffer) {
+        // Too close to top, scroll up
+        start_line = std::max(0, selected - buffer);
+    } else if (selected >= start_line + height - buffer) {
+        // Too close to bottom, scroll down
+        start_line = std::min((int)entries.size() - height, selected - height + buffer + 1);
+    }
+    
+    // Ensure start_line is within valid bounds
+    start_line = std::max(0, std::min(start_line, (int)entries.size() - height));
+    if ((int)entries.size() <= height) {
+        start_line = 0;
+    }
+    
+    for (int i = 0; i < std::min((int)entries.size(), height); i++) {
         int entry_idx = start_line + i;
         if (entry_idx >= entries.size()) break;
         
         const auto& entry = entries[entry_idx];
-        int line = i + 2;
-        
-        if (entry_idx == selected) {
-            wattron(browser_win, A_REVERSE);
-        }
+        int line = i;
         
         if (entry.is_directory) {
-            mvwprintw(browser_win, line, 0, "[DIR] %s", entry.name.c_str());
+            if (entry_idx == selected) {
+                wattron(browser_win, COLOR_PAIR(getColorPair(theme.selected_dir.fg, theme.selected_dir.bg)));
+                mvwprintw(browser_win, line, 0, " %-*s", width - 1, entry.name.c_str());
+            } else {
+                wattron(browser_win, COLOR_PAIR(getColorPair(theme.dir_name.fg, theme.dir_name.bg)));
+                mvwprintw(browser_win, line, 1, "%s", entry.name.c_str());
+            }
+            
         } else if (entry.is_sid_file) {
-            mvwprintw(browser_win, line, 0, "[SID] %s", entry.name.c_str());
+            if (entry_idx == selected) {
+                wattron(browser_win, COLOR_PAIR(getColorPair(theme.selected_sid.fg, theme.selected_sid.bg)));
+                mvwprintw(browser_win, line, 0, " %-*s", width - 1, entry.name.c_str());
+            } else {
+                wattron(browser_win, COLOR_PAIR(getColorPair(theme.sid_file.fg, theme.sid_file.bg)));
+                mvwprintw(browser_win, line, 1, "%s", entry.name.c_str());
+            }
         } else {
-            mvwprintw(browser_win, line, 0, "      %s", entry.name.c_str());
+            if (entry_idx == selected) {
+                wattron(browser_win, COLOR_PAIR(getColorPair(theme.value.fg, theme.value.bg)));
+                mvwprintw(browser_win, line, 0, " %-*s", width - 1, entry.name.c_str());
+            } else {
+                wattron(browser_win, COLOR_PAIR(getColorPair(theme.value.fg, theme.value.bg)));
+                mvwprintw(browser_win, line, 1, "%s", entry.name.c_str());
+            }
         }
         
-        if (entry_idx == selected) {
-            wattroff(browser_win, A_REVERSE);
-        }
+        // Reset attributes
+        wattrset(browser_win, A_NORMAL);
     }
     
     wnoutrefresh(browser_win);
@@ -154,6 +233,7 @@ void TUI::drawBrowser() {
 void TUI::drawStilInfo() {
     werase(stil_win);
     
+    const auto& theme = config->getCurrentTheme();
     int height, width;
     getmaxyx(stil_win, height, width);
     
@@ -161,33 +241,69 @@ void TUI::drawStilInfo() {
     
     // Player Information Section
     if (!player->getCurrentFile().empty()) {
-        mvwprintw(stil_win, line++, 0, "File: %s", player->getCurrentFile().c_str());
-        mvwprintw(stil_win, line++, 0, "Title: %s", player->getTitle().c_str());
-        mvwprintw(stil_win, line++, 0, "Author: %s", player->getAuthor().c_str());
-        mvwprintw(stil_win, line++, 0, "Copyright: %s", player->getCopyright().c_str());
-        mvwprintw(stil_win, line++, 0, "Track: %d/%d", player->getCurrentTrack(), player->getTrackCount());
+        // Get relative file path
+        std::string relative_file = config->getRelativeToHvsc(player->getCurrentFile());
         
-        int minutes = player->getPlayTime() / 60;
-        int seconds = player->getPlayTime() % 60;
+        // File
+        wattron(stil_win, COLOR_PAIR(getColorPair(theme.header.fg, theme.header.bg)));
+        mvwprintw(stil_win, line, 1, "%9s", "File");
+        wattroff(stil_win, COLOR_PAIR(getColorPair(theme.header.fg, theme.header.bg)));
+        wattron(stil_win, COLOR_PAIR(getColorPair(theme.colon.fg, theme.colon.bg)));
+        mvwprintw(stil_win, line, 10, ": ");
+        wattroff(stil_win, COLOR_PAIR(getColorPair(theme.colon.fg, theme.colon.bg)));
+        wattron(stil_win, COLOR_PAIR(getColorPair(theme.value.fg, theme.value.bg)));
+        mvwprintw(stil_win, line++, 12, "%s", relative_file.c_str());
+        wattroff(stil_win, COLOR_PAIR(getColorPair(theme.value.fg, theme.value.bg)));
         
-        // Get song length from search database
-        int song_length = search->getSongLength(player->getCurrentFile(), player->getCurrentTrack());
-        if (song_length > 0) {
-            int length_minutes = song_length / 60;
-            int length_seconds = song_length % 60;
-            mvwprintw(stil_win, line++, 0, "Time: %02d:%02d / %02d:%02d", minutes, seconds, length_minutes, length_seconds);
-        } else {
-            mvwprintw(stil_win, line++, 0, "Time: %02d:%02d", minutes, seconds);
-        }
+        // Title
+        wattron(stil_win, COLOR_PAIR(getColorPair(theme.header.fg, theme.header.bg)));
+        mvwprintw(stil_win, line, 1, "%9s", "Title");
+        wattroff(stil_win, COLOR_PAIR(getColorPair(theme.header.fg, theme.header.bg)));
+        wattron(stil_win, COLOR_PAIR(getColorPair(theme.colon.fg, theme.colon.bg)));
+        mvwprintw(stil_win, line, 10, ": ");
+        wattroff(stil_win, COLOR_PAIR(getColorPair(theme.colon.fg, theme.colon.bg)));
+        wattron(stil_win, COLOR_PAIR(getColorPair(theme.value.fg, theme.value.bg)));
+        mvwprintw(stil_win, line++, 12, "%s", player->getTitle().c_str());
+        wattroff(stil_win, COLOR_PAIR(getColorPair(theme.value.fg, theme.value.bg)));
         
-        std::string status = player->isPlaying() ? (player->isPaused() ? "PAUSED" : "PLAYING") : "STOPPED";
-        wattron(stil_win, COLOR_PAIR(player->isPlaying() ? 4 : 5));
-        mvwprintw(stil_win, line++, 0, "Status: [%s]", status.c_str());
-        wattroff(stil_win, COLOR_PAIR(player->isPlaying() ? 4 : 5));
+        // Author
+        wattron(stil_win, COLOR_PAIR(getColorPair(theme.header.fg, theme.header.bg)));
+        mvwprintw(stil_win, line, 1, "%9s", "Author");
+        wattroff(stil_win, COLOR_PAIR(getColorPair(theme.header.fg, theme.header.bg)));
+        wattron(stil_win, COLOR_PAIR(getColorPair(theme.colon.fg, theme.colon.bg)));
+        mvwprintw(stil_win, line, 10, ": ");
+        wattroff(stil_win, COLOR_PAIR(getColorPair(theme.colon.fg, theme.colon.bg)));
+        wattron(stil_win, COLOR_PAIR(getColorPair(theme.value.fg, theme.value.bg)));
+        mvwprintw(stil_win, line++, 12, "%s", player->getAuthor().c_str());
+        wattroff(stil_win, COLOR_PAIR(getColorPair(theme.value.fg, theme.value.bg)));
+        
+        // Copyright
+        wattron(stil_win, COLOR_PAIR(getColorPair(theme.header.fg, theme.header.bg)));
+        mvwprintw(stil_win, line, 1, "%9s", "Copyright");
+        wattroff(stil_win, COLOR_PAIR(getColorPair(theme.header.fg, theme.header.bg)));
+        wattron(stil_win, COLOR_PAIR(getColorPair(theme.colon.fg, theme.colon.bg)));
+        mvwprintw(stil_win, line, 10, ": ");
+        wattroff(stil_win, COLOR_PAIR(getColorPair(theme.colon.fg, theme.colon.bg)));
+        wattron(stil_win, COLOR_PAIR(getColorPair(theme.value.fg, theme.value.bg)));
+        mvwprintw(stil_win, line++, 12, "%s", player->getCopyright().c_str());
+        wattroff(stil_win, COLOR_PAIR(getColorPair(theme.value.fg, theme.value.bg)));
+        
+        // Track
+        wattron(stil_win, COLOR_PAIR(getColorPair(theme.header.fg, theme.header.bg)));
+        mvwprintw(stil_win, line, 1, "%9s", "Track");
+        wattroff(stil_win, COLOR_PAIR(getColorPair(theme.header.fg, theme.header.bg)));
+        wattron(stil_win, COLOR_PAIR(getColorPair(theme.colon.fg, theme.colon.bg)));
+        mvwprintw(stil_win, line, 10, ": ");
+        wattroff(stil_win, COLOR_PAIR(getColorPair(theme.colon.fg, theme.colon.bg)));
+        wattron(stil_win, COLOR_PAIR(getColorPair(theme.value.fg, theme.value.bg)));
+        mvwprintw(stil_win, line++, 12, "%d/%d", player->getCurrentTrack(), player->getTrackCount());
+        wattroff(stil_win, COLOR_PAIR(getColorPair(theme.value.fg, theme.value.bg)));
         
         line++; // Empty line separator
     } else {
-        mvwprintw(stil_win, line++, 0, "No file loaded");
+        wattron(stil_win, COLOR_PAIR(getColorPair(theme.value.fg, theme.value.bg)));
+        mvwprintw(stil_win, line++, 1, "No file loaded");
+        wattroff(stil_win, COLOR_PAIR(getColorPair(theme.value.fg, theme.value.bg)));
         line++; // Empty line separator
     }
     
@@ -197,26 +313,52 @@ void TUI::drawStilInfo() {
     if (!selected_file.empty() && stil_reader->hasInfo(selected_file)) {
         StilEntry info = stil_reader->getInfo(selected_file);
         
-        mvwprintw(stil_win, line++, 0, "STIL Information:");
+        mvwprintw(stil_win, line++, 1, "STIL Information");
         line++;
         
         if (!info.title.empty()) {
-            mvwprintw(stil_win, line++, 0, "Title: %s", info.title.c_str());
+            wattron(stil_win, COLOR_PAIR(getColorPair(theme.header.fg, theme.header.bg)));
+            mvwprintw(stil_win, line, 1, "%9s", "Title");
+            wattroff(stil_win, COLOR_PAIR(getColorPair(theme.header.fg, theme.header.bg)));
+            wattron(stil_win, COLOR_PAIR(getColorPair(theme.colon.fg, theme.colon.bg)));
+            mvwprintw(stil_win, line, 10, ": ");
+            wattroff(stil_win, COLOR_PAIR(getColorPair(theme.colon.fg, theme.colon.bg)));
+            wattron(stil_win, COLOR_PAIR(getColorPair(theme.value.fg, theme.value.bg)));
+            mvwprintw(stil_win, line++, 12, "%s", info.title.c_str());
+            wattroff(stil_win, COLOR_PAIR(getColorPair(theme.value.fg, theme.value.bg)));
         }
         if (!info.artist.empty()) {
-            mvwprintw(stil_win, line++, 0, "Artist: %s", info.artist.c_str());
+            wattron(stil_win, COLOR_PAIR(getColorPair(theme.header.fg, theme.header.bg)));
+            mvwprintw(stil_win, line, 1, "%9s", "Artist");
+            wattroff(stil_win, COLOR_PAIR(getColorPair(theme.header.fg, theme.header.bg)));
+            wattron(stil_win, COLOR_PAIR(getColorPair(theme.colon.fg, theme.colon.bg)));
+            mvwprintw(stil_win, line, 10, ": ");
+            wattroff(stil_win, COLOR_PAIR(getColorPair(theme.colon.fg, theme.colon.bg)));
+            wattron(stil_win, COLOR_PAIR(getColorPair(theme.value.fg, theme.value.bg)));
+            mvwprintw(stil_win, line++, 12, "%s", info.artist.c_str());
+            wattroff(stil_win, COLOR_PAIR(getColorPair(theme.value.fg, theme.value.bg)));
         }
         if (!info.copyright.empty()) {
-            mvwprintw(stil_win, line++, 0, "Copyright: %s", info.copyright.c_str());
+            wattron(stil_win, COLOR_PAIR(getColorPair(theme.header.fg, theme.header.bg)));
+            mvwprintw(stil_win, line, 1, "%9s", "Copyright");
+            wattroff(stil_win, COLOR_PAIR(getColorPair(theme.header.fg, theme.header.bg)));
+            wattron(stil_win, COLOR_PAIR(getColorPair(theme.colon.fg, theme.colon.bg)));
+            mvwprintw(stil_win, line, 10, ": ");
+            wattroff(stil_win, COLOR_PAIR(getColorPair(theme.colon.fg, theme.colon.bg)));
+            wattron(stil_win, COLOR_PAIR(getColorPair(theme.value.fg, theme.value.bg)));
+            mvwprintw(stil_win, line++, 12, "%s", info.copyright.c_str());
+            wattroff(stil_win, COLOR_PAIR(getColorPair(theme.value.fg, theme.value.bg)));
         }
         
         if (!info.comment.empty()) {
             line++;
-            mvwprintw(stil_win, line++, 0, "Comment:");
+            wattron(stil_win, COLOR_PAIR(getColorPair(theme.header.fg, theme.header.bg)));
+            mvwprintw(stil_win, line++, 1, "Comment:");
+            wattroff(stil_win, COLOR_PAIR(getColorPair(theme.header.fg, theme.header.bg)));
             
             // Word wrap the comment
             std::string comment = info.comment;
-            int max_width = width - 2;
+            int max_width = width - 3;
             size_t pos = 0;
             while (pos < comment.length() && line < height - 1) {
                 size_t end = std::min(pos + max_width, comment.length());
@@ -227,24 +369,35 @@ void TUI::drawStilInfo() {
                 }
                 
                 std::string line_text = comment.substr(pos, end - pos);
-                mvwprintw(stil_win, line++, 2, "%s", line_text.c_str());
+                wattron(stil_win, COLOR_PAIR(getColorPair(theme.value.fg, theme.value.bg)));
+                mvwprintw(stil_win, line++, 3, "%s", line_text.c_str());
+                wattroff(stil_win, COLOR_PAIR(getColorPair(theme.value.fg, theme.value.bg)));
                 pos = end + 1; // Skip the space
             }
         }
         
         if (!info.subtune_info.empty()) {
             line++;
-            mvwprintw(stil_win, line++, 0, "Subtunes:");
+            wattron(stil_win, COLOR_PAIR(getColorPair(theme.header.fg, theme.header.bg)));
+            mvwprintw(stil_win, line++, 1, "Subtunes:");
+            wattroff(stil_win, COLOR_PAIR(getColorPair(theme.header.fg, theme.header.bg)));
             for (size_t i = 0; i < info.subtune_info.size() && line < height - 1; i++) {
-                mvwprintw(stil_win, line++, 2, "%zu: %s", i + 1, info.subtune_info[i].c_str());
+                wattron(stil_win, COLOR_PAIR(getColorPair(theme.value.fg, theme.value.bg)));
+                mvwprintw(stil_win, line++, 3, "%zu: %s", i + 1, info.subtune_info[i].c_str());
+                wattroff(stil_win, COLOR_PAIR(getColorPair(theme.value.fg, theme.value.bg)));
             }
         }
     } else {
-        mvwprintw(stil_win, line++, 0, "STIL Information:");
+        mvwprintw(stil_win, line++, 1, "STIL Information");
         line++;
-        mvwprintw(stil_win, line++, 0, "No STIL information available");
-        mvwprintw(stil_win, line++, 0, "DB: %zu entries", stil_reader->getEntryCount());
+        wattron(stil_win, COLOR_PAIR(getColorPair(theme.value.fg, theme.value.bg)));
+        mvwprintw(stil_win, line++, 1, "No STIL information available");
+        mvwprintw(stil_win, line++, 1, "DB: %zu entries", stil_reader->getEntryCount());
+        wattroff(stil_win, COLOR_PAIR(getColorPair(theme.value.fg, theme.value.bg)));
     }
+    
+    // Reset all attributes to ensure clean state
+    wattrset(stil_win, A_NORMAL);
     
     wnoutrefresh(stil_win);
 }
@@ -256,8 +409,36 @@ void TUI::drawStatus() {
     if (search_mode) {
         mvwprintw(status_win, 0, 0, "Search: %s", search_query.c_str());
     } else {
-        mvwprintw(status_win, 0, 0, "Files: %zu | Path: %s", 
-                  browser->getEntries().size(), browser->getCurrentPath().c_str());
+        // Left side: File count
+        mvwprintw(status_win, 0, 0, "Files: %zu", browser->getEntries().size());
+        
+        // Right side: Time and Status (if playing)
+        if (!player->getCurrentFile().empty()) {
+            int minutes = player->getPlayTime() / 60;
+            int seconds = player->getPlayTime() % 60;
+            
+            // Get song length from search database
+            int song_length = search->getSongLength(player->getCurrentFile(), player->getCurrentTrack());
+            std::string time_str;
+            if (song_length > 0) {
+                int length_minutes = song_length / 60;
+                int length_seconds = song_length % 60;
+                time_str = std::to_string(minutes) + ":" + (seconds < 10 ? "0" : "") + std::to_string(seconds) + 
+                          " / " + std::to_string(length_minutes) + ":" + (length_seconds < 10 ? "0" : "") + std::to_string(length_seconds);
+            } else {
+                time_str = std::to_string(minutes) + ":" + (seconds < 10 ? "0" : "") + std::to_string(seconds);
+            }
+            
+            std::string status = player->isPlaying() ? (player->isPaused() ? "PAUSED" : "PLAYING") : "STOPPED";
+            std::string status_info = time_str + " [" + status + "]";
+            
+            // Right align the status info
+            int width = getmaxx(status_win);
+            int status_len = status_info.length();
+            if (status_len < width) {
+                mvwprintw(status_win, 0, width - status_len, "%s", status_info.c_str());
+            }
+        }
     }
     
     wnoutrefresh(status_win);
@@ -266,6 +447,9 @@ void TUI::drawStatus() {
 void TUI::drawHelp() {
     werase(help_win);
     
+    const auto& theme = config->getCurrentTheme();
+    wbkgd(help_win, COLOR_PAIR(getColorPair(theme.bottom_bar.fg, theme.bottom_bar.bg)));
+    
     if (search_mode) {
         mvwprintw(help_win, 0, 0, "j/k: Up/Down | ENTER: Play | ESC: Exit search | Type to search | SPACE: Pause | s: Stop | J/K: Next/Prev track | q: Quit");
     } else {
@@ -273,6 +457,24 @@ void TUI::drawHelp() {
     }
     
     wnoutrefresh(help_win);
+}
+
+void TUI::drawSeparator() {
+    werase(separator_win);
+    
+    const auto& theme = config->getCurrentTheme();
+    wattron(separator_win, COLOR_PAIR(getColorPair(theme.separator.fg, theme.separator.bg)));
+    
+    int height, width;
+    getmaxyx(separator_win, height, width);
+    
+    // Draw vertical line character for the full height using ACS_VLINE for better compatibility
+    for (int i = 0; i < height; i++) {
+        mvwaddch(separator_win, i, 0, ACS_VLINE);
+    }
+    
+    wattroff(separator_win, COLOR_PAIR(getColorPair(theme.separator.fg, theme.separator.bg)));
+    wnoutrefresh(separator_win);
 }
 
 void TUI::drawSearchResults() {
@@ -284,33 +486,51 @@ void TUI::drawSearchResults() {
     mvwprintw(browser_win, 0, 0, "Search results (%zu found):", search_results.size());
     
     if (search_results.empty()) {
-        mvwprintw(browser_win, 2, 0, "No results found");
+        mvwprintw(browser_win, 1, 0, "No results found");
         wnoutrefresh(browser_win);
         return;
     }
     
-    int start_line = std::max(0, search_selected - (height - 4));
+    // Calculate scroll position with 2-line buffer from top/bottom for search results
+    static int search_start_line = 0;
+    int buffer = 2;
+    int available_height = height - 1; // Account for header line
     
-    for (int i = 0; i < std::min((int)search_results.size(), height - 2); i++) {
+    // Only scroll when selected item gets within buffer distance of edges
+    if (search_selected < search_start_line + buffer) {
+        // Too close to top, scroll up
+        search_start_line = std::max(0, search_selected - buffer);
+    } else if (search_selected >= search_start_line + available_height - buffer) {
+        // Too close to bottom, scroll down
+        search_start_line = std::min((int)search_results.size() - available_height, search_selected - available_height + buffer + 1);
+    }
+    
+    // Ensure start_line is within valid bounds
+    search_start_line = std::max(0, std::min(search_start_line, (int)search_results.size() - available_height));
+    if ((int)search_results.size() <= available_height) {
+        search_start_line = 0;
+    }
+    
+    int start_line = search_start_line;
+    
+    for (int i = 0; i < std::min((int)search_results.size(), height - 1); i++) {
         int entry_idx = start_line + i;
         if (entry_idx >= (int)search_results.size()) break;
         
         const auto& entry = search_results[entry_idx];
-        int line = i + 2;
-        
-        if (entry_idx == search_selected) {
-            wattron(browser_win, A_REVERSE);
-        }
+        int line = i + 1;
         
         std::string display_text = entry.getDisplayName();
         if (display_text.length() > width - 1) {
             display_text = display_text.substr(0, width - 4) + "...";
         }
         
-        mvwprintw(browser_win, line, 0, "%s", display_text.c_str());
-        
         if (entry_idx == search_selected) {
+            wattron(browser_win, A_REVERSE);
+            mvwprintw(browser_win, line, 0, " %-*s", width - 1, display_text.c_str());
             wattroff(browser_win, A_REVERSE);
+        } else {
+            mvwprintw(browser_win, line, 1, "%s", display_text.c_str());
         }
     }
     
