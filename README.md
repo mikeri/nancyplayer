@@ -2,6 +2,8 @@
 
 A terminal-based SID player using sidplayfp library with a text user interface (TUI).
 
+Everything (including most of this README) is vibe coded with Claude, so don't trust anything, because AI is evil and bad.
+
 ## Features
 
 - **File Browser**: Navigate directories and browse SID files (.sid, .psid, .rsid, .mus, .str, .prg)
@@ -12,6 +14,7 @@ A terminal-based SID player using sidplayfp library with a text user interface (
 - **Multi-track Support**: Navigate between subtunes in SID files
 - **Real-time Display**: Shows playing status and elapsed time
 - **HVSC Compatible**: Designed to work with High Voltage SID Collection
+- **Themeable**: Includes example themes
 
 ## Dependencies
 
@@ -61,31 +64,6 @@ make
 - **p**: Previous track (subtune)
 - **q**: Quit
 
-### Interface Layout
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│ Nancy SID Player                          Press 'q' to quit │
-├─────────────────────────────────────────────────────────────┤
-│ Player                                                      │
-│ File: /path/to/file.sid                                     │
-│ Title: Song Title                                           │
-│ Author: Composer Name                                       │
-│ Copyright: (C) Year                                         │
-│ Track: 1/3                      Time: 01:23    [PLAYING]    │
-├──────────────────────┬──────────────────────────────────────┤
-│ File Browser         │ STIL Information                     │
-│ Path: /current/path  │ Title: Amazing Demo Song             │
-│ [DIR] subfolder      │ Artist: Famous Composer             │
-│ [SID] music.sid      │ Copyright: (C) 1989 Demo Group      │
-│ [SID] track.sid      │ Comment: This is an amazing song     │
-│                      │ that was composed for a famous demo │
-├──────────────────────┴──────────────────────────────────────┤
-│ Files: 15 | Path: /HVSC/MUSICIANS/A/Author                  │
-├─────────────────────────────────────────────────────────────┤
-│ j/k: Up/Down | h: Parent | l/ENTER: Play/Enter | q: Quit   │
-└─────────────────────────────────────────────────────────────┘
-```
 
 ## File Format Support
 
