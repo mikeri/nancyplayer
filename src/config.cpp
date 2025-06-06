@@ -284,6 +284,28 @@ void Config::createExampleThemes() {
             writeThemeFile(retro_theme_file, retro_theme);
         }
     }
+    
+    // Bumblebee theme (based on cmus theme)
+    {
+        std::string bumblebee_theme_file = themes_dir + "/bumblebee.theme";
+        if (!std::filesystem::exists(bumblebee_theme_file)) {
+            Theme bumblebee_theme;
+            bumblebee_theme.top_bar = ColorPair(252, 236);      // Light gray on dark gray (win_title)
+            bumblebee_theme.status_bar = ColorPair(245, 235);   // Gray on dark gray (statusline)
+            bumblebee_theme.bottom_bar = ColorPair(229, 236);   // Yellow on dark gray (titleline)
+            bumblebee_theme.header = ColorPair(172, 0);         // Orange/info color
+            bumblebee_theme.colon = ColorPair(236, 0);          // Dark gray separator
+            bumblebee_theme.value = ColorPair(246, 0);          // Default text (win_fg)
+            bumblebee_theme.prefix_sid = ColorPair(184, 0);     // Currently playing color
+            bumblebee_theme.prefix_dir = ColorPair(229, 0);     // Directory color
+            bumblebee_theme.sid_file = ColorPair(184, 0);       // Currently playing color
+            bumblebee_theme.dir_name = ColorPair(229, 0);       // Directory color
+            bumblebee_theme.selected_dir = ColorPair(229, 58);  // Active selection (yellow on dark green)
+            bumblebee_theme.selected_sid = ColorPair(226, 58);  // Current playing selection (bright yellow on dark green)
+            bumblebee_theme.separator = ColorPair(236, 0);      // Dark gray separator
+            writeThemeFile(bumblebee_theme_file, bumblebee_theme);
+        }
+    }
 }
 
 std::vector<std::string> Config::getAvailableThemes() const {

@@ -111,9 +111,17 @@ void TUI::refresh() {
 void TUI::drawHeader() {
     werase(header_win);
     
+    const auto& theme = config->getCurrentTheme();
+    int width = getmaxx(header_win);
+    
+    // Fill entire line with background color
+    wattron(header_win, COLOR_PAIR(getColorPair(theme.top_bar.fg, theme.top_bar.bg)));
+    mvwprintw(header_win, 0, 0, "%-*s", width, "");
+    
     std::string relative_path = config->getRelativeToHvsc(browser->getCurrentPath());
     mvwprintw(header_win, 0, 0, "Nancy SID Player - %s", relative_path.c_str());
     
+    wattroff(header_win, COLOR_PAIR(getColorPair(theme.top_bar.fg, theme.top_bar.bg)));
     wnoutrefresh(header_win);
 }
 
@@ -406,6 +414,13 @@ void TUI::drawStilInfo() {
 void TUI::drawStatus() {
     werase(status_win);
     
+    const auto& theme = config->getCurrentTheme();
+    int width = getmaxx(status_win);
+    
+    // Fill entire line with background color
+    wattron(status_win, COLOR_PAIR(getColorPair(theme.status_bar.fg, theme.status_bar.bg)));
+    mvwprintw(status_win, 0, 0, "%-*s", width, "");
+    
     if (search_mode) {
         mvwprintw(status_win, 0, 0, "Search: %s", search_query.c_str());
     } else {
@@ -433,7 +448,6 @@ void TUI::drawStatus() {
             std::string status_info = time_str + " [" + status + "]";
             
             // Right align the status info
-            int width = getmaxx(status_win);
             int status_len = status_info.length();
             if (status_len < width) {
                 mvwprintw(status_win, 0, width - status_len, "%s", status_info.c_str());
@@ -441,6 +455,7 @@ void TUI::drawStatus() {
         }
     }
     
+    wattroff(status_win, COLOR_PAIR(getColorPair(theme.status_bar.fg, theme.status_bar.bg)));
     wnoutrefresh(status_win);
 }
 
