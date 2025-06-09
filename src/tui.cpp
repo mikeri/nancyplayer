@@ -629,20 +629,58 @@ void TUI::drawSearchResults() {
         const auto& entry = search_results[entry_idx];
         int line = i + 4; // Start after header lines
         
-        std::string display_text = entry.getDisplayName();
+        // Extract directory path and filename
+        std::string full_path = entry.path;
+        std::string filename = entry.filename;
+        std::string directory_path = full_path.substr(0, full_path.length() - filename.length());
+        
+        // Combine directory and filename for cropping calculation
+        std::string full_display = directory_path + filename;
         int max_width = width - 4; // Account for border and padding
-        if (display_text.length() > max_width) {
-            display_text = display_text.substr(0, max_width - 3) + "...";
+        
+        // Crop from left if too long
+        std::string cropped_path = directory_path;
+        std::string cropped_filename = filename;
+        std::string cropped_full = full_display;
+        
+        if (full_display.length() > max_width) {
+            cropped_full = cropTextLeft(full_display, max_width);
+            // Find where the filename starts in the cropped text
+            if (cropped_full.length() >= filename.length() && 
+                cropped_full.substr(cropped_full.length() - filename.length()) == filename) {
+                // Filename is intact, split correctly
+                cropped_path = cropped_full.substr(0, cropped_full.length() - filename.length());
+                cropped_filename = filename;
+            } else {
+                // Filename was also cropped, show what we can
+                cropped_path = cropped_full;
+                cropped_filename = "";
+            }
         }
         
         if (entry_idx == search_selected) {
+            // Selected item: use selected colors for both path and filename
             wattron(search_win, COLOR_PAIR(getColorPair(theme.selected_sid.fg, theme.selected_sid.bg)));
-            mvwprintw(search_win, line, 2, "%-*s", max_width, display_text.c_str());
+            mvwprintw(search_win, line, 2, "%-*s", max_width, cropped_full.c_str());
             wattroff(search_win, COLOR_PAIR(getColorPair(theme.selected_sid.fg, theme.selected_sid.bg)));
         } else {
-            wattron(search_win, COLOR_PAIR(getColorPair(theme.sid_file.fg, theme.sid_file.bg)));
-            mvwprintw(search_win, line, 2, "%s", display_text.c_str());
-            wattroff(search_win, COLOR_PAIR(getColorPair(theme.sid_file.fg, theme.sid_file.bg)));
+            // Non-selected item: use different colors for path and filename
+            int col = 2;
+            
+            // Draw path in softer color
+            if (!cropped_path.empty()) {
+                wattron(search_win, COLOR_PAIR(getColorPair(theme.path.fg, theme.path.bg)));
+                mvwprintw(search_win, line, col, "%s", cropped_path.c_str());
+                wattroff(search_win, COLOR_PAIR(getColorPair(theme.path.fg, theme.path.bg)));
+                col += cropped_path.length();
+            }
+            
+            // Draw filename in normal color
+            if (!cropped_filename.empty()) {
+                wattron(search_win, COLOR_PAIR(getColorPair(theme.sid_file.fg, theme.sid_file.bg)));
+                mvwprintw(search_win, line, col, "%s", cropped_filename.c_str());
+                wattroff(search_win, COLOR_PAIR(getColorPair(theme.sid_file.fg, theme.sid_file.bg)));
+            }
         }
     }
     

@@ -27,6 +27,7 @@ struct Theme {
     ColorPair selected_dir;// Selected directory
     ColorPair selected_sid;// Selected SID file
     ColorPair separator;   // Vertical separator between left and right panels
+    ColorPair path;        // File path in search results
     
     Theme() {
         // All defaults are fg=15, bg=0 (bright white on black)
@@ -44,6 +45,8 @@ struct Theme {
         selected_dir = ColorPair(0, 15);
         selected_sid = ColorPair(0, 15);
         separator = ColorPair(15, 0);
+        // Path uses a softer color (gray)
+        path = ColorPair(8, 0);
     }
 };
 
