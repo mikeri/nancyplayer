@@ -46,6 +46,27 @@ void FileBrowser::goToParent() {
     }
 }
 
+void FileBrowser::navigateToFile(const std::string& file_path) {
+    try {
+        std::filesystem::path target_path = std::filesystem::path(file_path);
+        std::filesystem::path target_dir = target_path.parent_path();
+        std::string target_filename = target_path.filename().string();
+        
+        // Navigate to the directory containing the file
+        setDirectory(target_dir.string());
+        
+        // Find and select the target file in the entries
+        for (size_t i = 0; i < entries.size(); i++) {
+            if (entries[i].name == target_filename) {
+                selected_index = static_cast<int>(i);
+                break;
+            }
+        }
+    } catch (const std::filesystem::filesystem_error&) {
+        // If navigation fails, just ignore it
+    }
+}
+
 std::string FileBrowser::getSelectedFile() const {
     if (selected_index < entries.size()) {
         return entries[selected_index].path;

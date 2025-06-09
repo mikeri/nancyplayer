@@ -35,6 +35,8 @@ private:
     void drawSearchResults();
     void drawSeparator();
     void resetScrollPositions();
+    void createSearchWindow();
+    void destroySearchWindow();
     
     WINDOW* header_win;
     WINDOW* browser_win;
@@ -42,6 +44,7 @@ private:
     WINDOW* stil_win;
     WINDOW* status_win;
     WINDOW* help_win;
+    WINDOW* search_win;
     
     std::unique_ptr<Player> player;
     std::unique_ptr<FileBrowser> browser;

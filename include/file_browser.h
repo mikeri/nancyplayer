@@ -21,6 +21,7 @@ public:
     void moveDown();
     void enterDirectory();
     void goToParent();
+    void navigateToFile(const std::string& file_path);
     
     const std::vector<FileEntry>& getEntries() const { return entries; }
     int getSelectedIndex() const { return selected_index; }

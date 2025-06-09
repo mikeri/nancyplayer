@@ -7,7 +7,7 @@
 #include <algorithm>
 #include <iostream>
 
-TUI::TUI() : running(false), search_mode(false), search_selected(0), next_color_pair(1), browser_start_line(0), search_start_line(0) {
+TUI::TUI() : running(false), search_mode(false), search_selected(0), next_color_pair(1), browser_start_line(0), search_start_line(0), search_win(nullptr) {
     initscr();
     cbreak();
     noecho();
@@ -29,6 +29,7 @@ TUI::TUI() : running(false), search_mode(false), search_selected(0), next_color_
 }
 
 TUI::~TUI() {
+    destroySearchWindow();
     destroyWindows();
     endwin();
 }
@@ -90,6 +91,36 @@ void TUI::destroyWindows() {
     }
 }
 
+void TUI::createSearchWindow() {
+    if (search_win) {
+        destroySearchWindow();
+    }
+    
+    const auto& theme = config->getCurrentTheme();
+    
+    // Calculate centered window dimensions
+    int search_width = std::min(screen_width - 6, 60);  // 60 chars wide, but not larger than screen
+    int search_height = std::min(screen_height - 6, 20); // 20 lines high, but not larger than screen
+    int search_x = (screen_width - search_width) / 2;
+    int search_y = (screen_height - search_height) / 2;
+    
+    // Create the search window with border
+    search_win = newwin(search_height, search_width, search_y, search_x);
+    
+    // Set up the frame using separator colors
+    wbkgd(search_win, COLOR_PAIR(getColorPair(theme.separator.fg, theme.separator.bg)));
+    box(search_win, 0, 0);
+    
+    keypad(search_win, TRUE);
+}
+
+void TUI::destroySearchWindow() {
+    if (search_win) {
+        delwin(search_win);
+        search_win = nullptr;
+    }
+}
+
 void TUI::run() {
     if (screen_height < 20 || screen_width < 60) {
         endwin();
@@ -130,15 +161,15 @@ void TUI::refresh() {
     }
     
     drawHeader();
-    if (search_mode) {
-        drawSearchResults();
-    } else {
-        drawBrowser();
-    }
+    drawBrowser();
     drawSeparator();
     drawStilInfo();
     drawStatus();
     drawHelp();
+    
+    if (search_mode) {
+        drawSearchResults();
+    }
     
     doupdate();
 }
@@ -529,22 +560,38 @@ void TUI::drawSeparator() {
 }
 
 void TUI::drawSearchResults() {
-    werase(browser_win);
+    if (!search_win) {
+        createSearchWindow();
+    }
     
+    werase(search_win);
+    
+    const auto& theme = config->getCurrentTheme();
     int height, width;
-    getmaxyx(browser_win, height, width);
+    getmaxyx(search_win, height, width);
     
-    mvwprintw(browser_win, 0, 0, "Search results (%zu found):", search_results.size());
+    // Redraw the border with separator colors
+    wattron(search_win, COLOR_PAIR(getColorPair(theme.separator.fg, theme.separator.bg)));
+    box(search_win, 0, 0);
+    wattroff(search_win, COLOR_PAIR(getColorPair(theme.separator.fg, theme.separator.bg)));
+    
+    // Header line
+    wattron(search_win, COLOR_PAIR(getColorPair(theme.header.fg, theme.header.bg)));
+    mvwprintw(search_win, 1, 2, "Search: %s", search_query.c_str());
+    mvwprintw(search_win, 2, 2, "Results (%zu found):", search_results.size());
+    wattroff(search_win, COLOR_PAIR(getColorPair(theme.header.fg, theme.header.bg)));
     
     if (search_results.empty()) {
-        mvwprintw(browser_win, 1, 0, "No results found");
-        wnoutrefresh(browser_win);
+        wattron(search_win, COLOR_PAIR(getColorPair(theme.value.fg, theme.value.bg)));
+        mvwprintw(search_win, 4, 2, "No results found");
+        wattroff(search_win, COLOR_PAIR(getColorPair(theme.value.fg, theme.value.bg)));
+        wnoutrefresh(search_win);
         return;
     }
     
     // Calculate scroll position with 2-line buffer from top/bottom for search results
-    int buffer = 2;
-    int available_height = height - 1; // Account for header line
+    int buffer = 1;
+    int available_height = height - 5; // Account for border, header, and query lines
     
     // Only scroll when selected item gets within buffer distance of edges
     if (search_selected < search_start_line + buffer) {
@@ -563,28 +610,31 @@ void TUI::drawSearchResults() {
     
     int start_line = search_start_line;
     
-    for (int i = 0; i < std::min((int)search_results.size(), height - 1); i++) {
+    for (int i = 0; i < std::min((int)search_results.size(), available_height); i++) {
         int entry_idx = start_line + i;
         if (entry_idx >= (int)search_results.size()) break;
         
         const auto& entry = search_results[entry_idx];
-        int line = i + 1;
+        int line = i + 4; // Start after header lines
         
         std::string display_text = entry.getDisplayName();
-        if (display_text.length() > width - 1) {
-            display_text = display_text.substr(0, width - 4) + "...";
+        int max_width = width - 4; // Account for border and padding
+        if (display_text.length() > max_width) {
+            display_text = display_text.substr(0, max_width - 3) + "...";
         }
         
         if (entry_idx == search_selected) {
-            wattron(browser_win, A_REVERSE);
-            mvwprintw(browser_win, line, 0, " %-*s", width - 1, display_text.c_str());
-            wattroff(browser_win, A_REVERSE);
+            wattron(search_win, COLOR_PAIR(getColorPair(theme.selected_sid.fg, theme.selected_sid.bg)));
+            mvwprintw(search_win, line, 2, "%-*s", max_width, display_text.c_str());
+            wattroff(search_win, COLOR_PAIR(getColorPair(theme.selected_sid.fg, theme.selected_sid.bg)));
         } else {
-            mvwprintw(browser_win, line, 1, "%s", display_text.c_str());
+            wattron(search_win, COLOR_PAIR(getColorPair(theme.sid_file.fg, theme.sid_file.bg)));
+            mvwprintw(search_win, line, 2, "%s", display_text.c_str());
+            wattroff(search_win, COLOR_PAIR(getColorPair(theme.sid_file.fg, theme.sid_file.bg)));
         }
     }
     
-    wnoutrefresh(browser_win);
+    wnoutrefresh(search_win);
 }
 
 void TUI::handleInput() {
@@ -597,6 +647,7 @@ void TUI::handleInput() {
                 search_query.clear();
                 search_results.clear();
                 search_selected = 0;
+                destroySearchWindow();
                 break;
                 
             case KEY_BACKSPACE:
@@ -615,16 +666,23 @@ void TUI::handleInput() {
                 if (!search_results.empty() && search_selected < (int)search_results.size()) {
                     const auto& entry = search_results[search_selected];
                     std::string full_path = entry.path;
-                    // Convert HVSC path to absolute path by adding current working directory
+                    // Convert HVSC path to absolute path by adding HVSC root
                     if (full_path[0] == '/') {
-                        full_path = "." + full_path;
+                        full_path = config->getHvscRoot() + full_path;
                     }
+                    
+                    // Navigate to the file location in the browser
+                    browser->navigateToFile(full_path);
+                    
+                    // Load and play the file
                     player->loadFile(full_path);
                     player->play();
+                    
                     search_mode = false;
                     search_query.clear();
                     search_results.clear();
                     search_selected = 0;
+                    destroySearchWindow();
                 }
                 break;
                 
@@ -688,6 +746,7 @@ void TUI::handleInput() {
                 search_query.clear();
                 search_results.clear();
                 search_selected = 0;
+                createSearchWindow();
                 break;
                 
             // Vim-style navigation
@@ -768,6 +827,9 @@ void TUI::handleResize() {
         resize_term(new_height, new_width);
         
         // Destroy old windows safely
+        if (search_mode) {
+            destroySearchWindow();
+        }
         destroyWindows();
         
         // Clear the screen completely
@@ -776,6 +838,9 @@ void TUI::handleResize() {
         
         // Reinitialize windows with new dimensions
         initWindows();
+        if (search_mode) {
+            createSearchWindow();
+        }
         
         // Reset scroll positions for new window sizes
         resetScrollPositions();
