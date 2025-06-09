@@ -37,6 +37,7 @@ private:
     void resetScrollPositions();
     void createSearchWindow();
     void destroySearchWindow();
+    std::string cropTextLeft(const std::string& text, int max_width);
     
     WINDOW* header_win;
     WINDOW* browser_win;

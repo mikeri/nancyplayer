@@ -327,7 +327,8 @@ void TUI::drawStilInfo() {
         mvwprintw(stil_win, line, 10, ": ");
         wattroff(stil_win, COLOR_PAIR(getColorPair(theme.colon.fg, theme.colon.bg)));
         wattron(stil_win, COLOR_PAIR(getColorPair(theme.value.fg, theme.value.bg)));
-        mvwprintw(stil_win, line++, 12, "%s", relative_file.c_str());
+        std::string cropped_file = cropTextLeft(relative_file, width - 12);
+        mvwprintw(stil_win, line++, 12, "%s", cropped_file.c_str());
         wattroff(stil_win, COLOR_PAIR(getColorPair(theme.value.fg, theme.value.bg)));
         
         // Title
@@ -338,7 +339,8 @@ void TUI::drawStilInfo() {
         mvwprintw(stil_win, line, 10, ": ");
         wattroff(stil_win, COLOR_PAIR(getColorPair(theme.colon.fg, theme.colon.bg)));
         wattron(stil_win, COLOR_PAIR(getColorPair(theme.value.fg, theme.value.bg)));
-        mvwprintw(stil_win, line++, 12, "%s", player->getTitle().c_str());
+        std::string cropped_title = cropTextLeft(player->getTitle(), width - 12);
+        mvwprintw(stil_win, line++, 12, "%s", cropped_title.c_str());
         wattroff(stil_win, COLOR_PAIR(getColorPair(theme.value.fg, theme.value.bg)));
         
         // Author
@@ -349,7 +351,8 @@ void TUI::drawStilInfo() {
         mvwprintw(stil_win, line, 10, ": ");
         wattroff(stil_win, COLOR_PAIR(getColorPair(theme.colon.fg, theme.colon.bg)));
         wattron(stil_win, COLOR_PAIR(getColorPair(theme.value.fg, theme.value.bg)));
-        mvwprintw(stil_win, line++, 12, "%s", player->getAuthor().c_str());
+        std::string cropped_author = cropTextLeft(player->getAuthor(), width - 12);
+        mvwprintw(stil_win, line++, 12, "%s", cropped_author.c_str());
         wattroff(stil_win, COLOR_PAIR(getColorPair(theme.value.fg, theme.value.bg)));
         
         // Copyright
@@ -360,7 +363,8 @@ void TUI::drawStilInfo() {
         mvwprintw(stil_win, line, 10, ": ");
         wattroff(stil_win, COLOR_PAIR(getColorPair(theme.colon.fg, theme.colon.bg)));
         wattron(stil_win, COLOR_PAIR(getColorPair(theme.value.fg, theme.value.bg)));
-        mvwprintw(stil_win, line++, 12, "%s", player->getCopyright().c_str());
+        std::string cropped_copyright = cropTextLeft(player->getCopyright(), width - 12);
+        mvwprintw(stil_win, line++, 12, "%s", cropped_copyright.c_str());
         wattroff(stil_win, COLOR_PAIR(getColorPair(theme.value.fg, theme.value.bg)));
         
         // Track
@@ -399,7 +403,8 @@ void TUI::drawStilInfo() {
             mvwprintw(stil_win, line, 10, ": ");
             wattroff(stil_win, COLOR_PAIR(getColorPair(theme.colon.fg, theme.colon.bg)));
             wattron(stil_win, COLOR_PAIR(getColorPair(theme.value.fg, theme.value.bg)));
-            mvwprintw(stil_win, line++, 12, "%s", info.title.c_str());
+            std::string cropped_stil_title = cropTextLeft(info.title, width - 12);
+            mvwprintw(stil_win, line++, 12, "%s", cropped_stil_title.c_str());
             wattroff(stil_win, COLOR_PAIR(getColorPair(theme.value.fg, theme.value.bg)));
         }
         if (!info.artist.empty()) {
@@ -410,7 +415,8 @@ void TUI::drawStilInfo() {
             mvwprintw(stil_win, line, 10, ": ");
             wattroff(stil_win, COLOR_PAIR(getColorPair(theme.colon.fg, theme.colon.bg)));
             wattron(stil_win, COLOR_PAIR(getColorPair(theme.value.fg, theme.value.bg)));
-            mvwprintw(stil_win, line++, 12, "%s", info.artist.c_str());
+            std::string cropped_stil_artist = cropTextLeft(info.artist, width - 12);
+            mvwprintw(stil_win, line++, 12, "%s", cropped_stil_artist.c_str());
             wattroff(stil_win, COLOR_PAIR(getColorPair(theme.value.fg, theme.value.bg)));
         }
         if (!info.copyright.empty()) {
@@ -421,12 +427,16 @@ void TUI::drawStilInfo() {
             mvwprintw(stil_win, line, 10, ": ");
             wattroff(stil_win, COLOR_PAIR(getColorPair(theme.colon.fg, theme.colon.bg)));
             wattron(stil_win, COLOR_PAIR(getColorPair(theme.value.fg, theme.value.bg)));
-            mvwprintw(stil_win, line++, 12, "%s", info.copyright.c_str());
+            std::string cropped_stil_copyright = cropTextLeft(info.copyright, width - 12);
+            mvwprintw(stil_win, line++, 12, "%s", cropped_stil_copyright.c_str());
             wattroff(stil_win, COLOR_PAIR(getColorPair(theme.value.fg, theme.value.bg)));
         }
         
         if (!info.comment.empty()) {
-            line++;
+            // Only add extra line if there were other fields displayed above
+            if (!info.title.empty() || !info.artist.empty() || !info.copyright.empty()) {
+                line++;
+            }
             wattron(stil_win, COLOR_PAIR(getColorPair(theme.header.fg, theme.header.bg)));
             mvwprintw(stil_win, line++, 1, "Comment:");
             wattroff(stil_win, COLOR_PAIR(getColorPair(theme.header.fg, theme.header.bg)));
@@ -458,7 +468,9 @@ void TUI::drawStilInfo() {
             wattroff(stil_win, COLOR_PAIR(getColorPair(theme.header.fg, theme.header.bg)));
             for (size_t i = 0; i < info.subtune_info.size() && line < height - 1; i++) {
                 wattron(stil_win, COLOR_PAIR(getColorPair(theme.value.fg, theme.value.bg)));
-                mvwprintw(stil_win, line++, 3, "%zu: %s", i + 1, info.subtune_info[i].c_str());
+                std::string subtune_text = std::to_string(i + 1) + ": " + info.subtune_info[i];
+                std::string cropped_subtune = cropTextLeft(subtune_text, width - 3);
+                mvwprintw(stil_win, line++, 3, "%s", cropped_subtune.c_str());
                 wattroff(stil_win, COLOR_PAIR(getColorPair(theme.value.fg, theme.value.bg)));
             }
         }
@@ -854,4 +866,13 @@ void TUI::handleResize() {
 void TUI::resetScrollPositions() {
     browser_start_line = 0;
     search_start_line = 0;
+}
+
+std::string TUI::cropTextLeft(const std::string& text, int max_width) {
+    if (text.length() <= max_width) {
+        return text;
+    }
+    
+    // Crop from left and add ellipsis
+    return "..." + text.substr(text.length() - max_width + 3);
 }
