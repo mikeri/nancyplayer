@@ -545,9 +545,9 @@ void TUI::drawHelp() {
     wbkgd(help_win, COLOR_PAIR(getColorPair(theme.bottom_bar.fg, theme.bottom_bar.bg)));
     
     if (search_mode) {
-        mvwprintw(help_win, 0, 0, "j/k: Up/Down | ENTER: Play | ESC: Exit search | Type to search | SPACE: Pause | s: Stop | J/K: Next/Prev track | q: Quit");
+        mvwprintw(help_win, 0, 0, "j/k: Up/Down | ENTER: Play | ESC: Exit search | Type to search | SPACE: Pause/Resume | s: Stop | J/K: Next/Prev track | q: Quit");
     } else {
-        mvwprintw(help_win, 0, 0, "j/k: Up/Down | h: Parent dir | l/ENTER: Play/Enter dir | /: Search | SPACE: Pause | s: Stop | J/K: Next/Prev track | q: Quit");
+        mvwprintw(help_win, 0, 0, "j/k: Up/Down | h: Parent dir | l/ENTER: Play/Enter dir | /: Search | SPACE: Pause/Resume | s: Stop | J/K: Next/Prev track | q: Quit");
     }
     
     wnoutrefresh(help_win);
@@ -752,7 +752,11 @@ void TUI::handleInput() {
                 
             case ' ':
                 if (player->isPlaying()) {
-                    player->pause();
+                    if (player->isPaused()) {
+                        player->play();
+                    } else {
+                        player->pause();
+                    }
                 } else if (!player->getCurrentFile().empty()) {
                     player->play();
                 }
@@ -835,7 +839,11 @@ void TUI::handleInput() {
                 
             case ' ':
                 if (player->isPlaying()) {
-                    player->pause();
+                    if (player->isPaused()) {
+                        player->play();
+                    } else {
+                        player->pause();
+                    }
                 } else if (!player->getCurrentFile().empty()) {
                     player->play();
                 }
